@@ -1,0 +1,174 @@
+<%- include('../partials/header', { pageTitle: 'Заявки' }) %>
+
+<%
+  const STATUS_LABEL = {
+    new: 'Новая', reviewed: 'Рассмотрена', in_work: 'В работе',
+    postponed: 'Отложена', done: 'Выполнена', rejected: 'Отклонена',
+  };
+  // На флажках фильтра — во множественном: «Новые 4», «В работе 2»
+  const STATUS_MANY = {
+    new: 'Новые', reviewed: 'Рассмотрены', in_work: 'В работе',
+    postponed: 'Отложены', done: 'Выполнены', rejected: 'Отклонены',
+  };
+  // Срочность в строке показываем только высокую и «Срочно» — остальное шум
+  const urgMark = (u) => u === 'critical'
+    ? '<span class="urg urg--critical"><svg class="icon" aria-hidden="true"><use href="#i-flame"></use></svg>Срочно</span>'
+    : u === 'high'
+      ? '<span class="urg urg--high"><svg class="icon" aria-hidden="true"><use href="#i-flag"></use></svg>Высокая</span>'
+      : '';
+  const extraFilters = [filters.building_id, filters.group_id, filters.urgency].filter(Boolean).length;
+%>
+
+<div class="pagehead">
+  <h1>Заявки</h1>
+  <span class="count mono" id="tickets-count" data-live-part="count"><%= pager.total %></span>
+</div>
+
+<%# Кнопки «Фильтр» нет: /app.js применяет фильтры сразу при изменении любого
+    поля и подменяет из новой страницы все блоки с data-live-part %>
+<form method="GET" action="/tickets" class="tk-filters" data-live-filter>
+  <div class="chips hscroll" role="group" aria-label="Статус">
+    <% statuses.forEach(s => { %>
+      <label class="chip" data-st="<%= s.code %>">
+        <input type="checkbox" name="status" value="<%= s.code %>" <%= filters.status.includes(s.code) ? 'checked' : '' %> />
+        <span class="dot" aria-hidden="true"></span><%= STATUS_MANY[s.code] %>
+        <span class="n" data-live-part="n-<%= s.code %>"><%= counts[s.code] || 0 %></span>
+      </label>
+    <% }) %>
+    <span class="chips__sep" aria-hidden="true"></span>
+    <label class="chip chip--warn">
+      <input type="checkbox" name="unassigned" value="1" <%= filters.unassigned ? 'checked' : '' %> />
+      <span class="dot" aria-hidden="true"></span>Без исполнителя
+      <span class="n" data-live-part="n-unassigned"><%= counts.unassigned %></span>
+    </label>
+  </div>
+
+  <div class="toolbar">
+    <label class="search">
+      <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+      <input type="search" name="q" value="<%= filters.q || '' %>" placeholder="Номер, текст или автор" aria-label="Поиск" />
+    </label>
+    <button type="button" class="btn btn-icon filterbtn <%= extraFilters ? 'is-on' : '' %>"
+            data-sheet-open="tk-sheet" aria-label="Корпус, группа, срочность" title="Корпус, группа, срочность">
+      <svg class="icon" aria-hidden="true"><use href="#i-sliders"></use></svg>
+    </button>
+
+    <%# На компьютере эти поля стоят в строке с поиском, на телефоне — в шторке
+        снизу (кнопка с ползунками). Разметка одна, раскладку меняет CSS %>
+    <div class="sheet" id="tk-sheet">
+      <div class="sheet__grab" aria-hidden="true"></div>
+      <div class="sheet__head">
+        <h2>Фильтры</h2>
+        <button type="button" class="iconbtn" data-sheet-close aria-label="Закрыть">
+          <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+        </button>
+      </div>
+      <label class="field">
+        <span class="field__label">Корпус</span>
+        <select name="building_id">
+          <option value="">Все корпуса</option>
+          <% buildings.forEach(b => { %>
+            <option value="<%= b.id %>" <%= String(filters.building_id) === String(b.id) ? 'selected' : '' %>><%= b.name %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field__label">Группа неисправностей</span>
+        <select name="group_id">
+          <option value="">Все группы</option>
+          <% groups.forEach(g => { %>
+            <option value="<%= g.id %>" <%= String(filters.group_id) === String(g.id) ? 'selected' : '' %>><%= g.name %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field__label">Срочность</span>
+        <select name="urgency">
+          <option value="">Любая срочность</option>
+          <% urgencies.forEach(u => { %>
+            <option value="<%= u.code %>" <%= filters.urgency === u.code ? 'selected' : '' %>><%= u.label %></option>
+          <% }) %>
+        </select>
+      </label>
+      <div class="sheet__foot">
+        <a href="/tickets" class="btn btn-ghost" data-reset>Сбросить</a>
+        <button type="button" class="btn btn-primary" data-sheet-close>
+          Показать <span data-live-part="count-sheet"><%= pager.total %></span>
+        </button>
+      </div>
+    </div>
+    <noscript><button type="submit" class="btn">Применить</button></noscript>
+  </div>
+</form>
+
+<div class="card tbl" id="tickets-table" data-live-part="table">
+  <div class="tr tr--head" aria-hidden="true">
+    <span>№</span><span>Неисправность</span><span>Где</span><span>Статус</span><span>Исполнитель</span><span>Создана</span><span></span>
+  </div>
+  <% if (!tickets.length) { %>
+    <div class="empty">По этому отбору заявок нет. <a href="/tickets" data-reset>Сбросить фильтры</a></div>
+  <% } %>
+  <% tickets.forEach(t => { %>
+    <a class="tr" href="/tickets/<%= t.id %>" data-key="<%= t.id %>" data-urg="<%= t.urgency %>">
+      <span class="t-no">№<%= t.id %><small><%- urgMark(t.urgency) %></small></span>
+      <span class="t-what">
+        <b>
+          <span class="t-title"><%= t.group_name || '—' %><% if (t.type_name) { %> · <%= t.type_name %><% } %></span>
+          <% if (t.photo_url) { %><svg class="icon" role="img" aria-label="есть фото"><use href="#i-camera"></use></svg><% } %>
+          <% if (t.parent_id) { %><span class="tag" title="Привязана к заявке №<%= t.parent_id %>">↳ <%= t.parent_id %></span><% } %>
+        </b>
+        <% if (t.comment) { %><p><%= t.comment %></p><% } %>
+      </span>
+      <span class="t-place"><%= t.building_name || '—' %><% if (t.room_number) { %><small><%= t.room_number %></small><% } %></span>
+      <span class="t-st"><span class="pill" data-st="<%= t.status %>"><%= STATUS_LABEL[t.status] || t.status %></span><%- urgMark(t.urgency) %></span>
+      <span class="t-who">
+        <% if (t.executor_name) { %>
+          <span class="avatar" aria-hidden="true"><%= initials(t.executor_name) %></span><span><%= t.executor_name %></span>
+        <% } else if (t.executor_id) { %>
+          <span class="avatar" aria-hidden="true">?</span><span>без имени</span>
+        <% } else { %>
+          <span class="tag tag--warn">Не назначен</span>
+        <% } %>
+      </span>
+      <span class="t-when"><%= fmtWhen(t.created_at) %><small><%= t.author_name || 'MAX ' + t.author_max_id %></small></span>
+      <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+    </a>
+  <% }) %>
+  <% if (tickets.length) { %>
+    <%# Без JS номера страниц — обычные ссылки. /app.js подгружает страницу в фоне
+        и меняет строки на месте, а подсветка переезжает к новому номеру %>
+    <div class="tfoot">
+      <span class="tfoot__range"><span class="mono"><%= pager.from %>–<%= pager.to %></span> из <span class="mono"><%= pager.total %></span></span>
+      <% if (pager.pages > 1) { %>
+        <nav class="pager" aria-label="Страницы" data-pager>
+          <% if (pager.prev) { %>
+            <a class="pg pg--step" href="<%= pager.prev %>" rel="prev" aria-label="Предыдущая страница" data-page="<%= pager.page - 1 %>">
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron-left"></use></svg>
+            </a>
+          <% } else { %>
+            <span class="pg pg--step" aria-hidden="true"><svg class="icon"><use href="#i-chevron-left"></use></svg></span>
+          <% } %>
+          <% pager.items.forEach(it => { %>
+            <% if (!it) { %>
+              <span class="pg pg--gap" aria-hidden="true">…</span>
+            <% } else { %>
+              <a class="pg mono" href="<%= it.url %>" data-page="<%= it.n %>"
+                 <%- it.n === pager.page ? 'aria-current="page"' : '' %>><%= it.n %></a>
+            <% } %>
+          <% }) %>
+          <% if (pager.next) { %>
+            <a class="pg pg--step" href="<%= pager.next %>" rel="next" aria-label="Следующая страница" data-page="<%= pager.page + 1 %>">
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </a>
+          <% } else { %>
+            <span class="pg pg--step" aria-hidden="true"><svg class="icon"><use href="#i-chevron-right"></use></svg></span>
+          <% } %>
+        </nav>
+      <% } %>
+    </div>
+  <% } %>
+</div>
+
+<div class="scrim" data-scrim></div>
+
+<%- include('../partials/footer') %>

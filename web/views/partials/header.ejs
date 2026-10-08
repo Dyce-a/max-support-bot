@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title><%= typeof pageTitle !== 'undefined' ? pageTitle : 'Админ-панель' %></title>
+  <meta name="color-scheme" content="light dark" />
+  <%# Тема ставится до первой отрисовки: иначе при тёмной теме каждая страница
+      сначала вспыхивала бы белым. Без сохранённого выбора — как в системе %>
+  <script>try { var t = localStorage.getItem('theme'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) {}
+  if (!('onpagereveal' in window)) document.documentElement.classList.add('no-vt');</script>
+  <link rel="preload" href="/fonts/onest-cyrillic-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<%- include('icons') %>
+<%
+  // Разделы верхнего меню. На телефоне вместо него нижнее — оно в footer.ejs
+  const NAV = [
+    { href: '/tickets', icon: 'i-inbox', label: 'Заявки' },
+    { href: '/refs',    icon: 'i-book',  label: 'Справочники' },
+    { href: '/qr',      icon: 'i-qr',    label: 'QR-коды' },
+    { href: '/users',   icon: 'i-users', label: 'Пользователи' },
+  ];
+%>
+<% if (admin) { %>
+<header class="topbar">
+  <a href="/tickets" class="brand">
+    <span class="brand__mark"><svg class="icon" aria-hidden="true"><use href="#i-tool"></use></svg></span>
+    <span>Поддержка <small>админка</small></span>
+  </a>
+  <nav class="nav" aria-label="Разделы">
+    <% NAV.forEach(n => { %>
+      <a href="<%= n.href %>" <%- urlPath.startsWith(n.href) ? 'aria-current="page"' : '' %>>
+        <svg class="icon" aria-hidden="true"><use href="#<%= n.icon %>"></use></svg><%= n.label %>
+      </a>
+    <% }) %>
+  </nav>
+  <div class="topbar__right">
+    <button type="button" class="iconbtn" id="theme-toggle" title="Светлая или тёмная тема" aria-label="Сменить тему">
+      <svg class="icon" aria-hidden="true"><use href="#i-contrast"></use></svg>
+    </button>
+    <a href="/password" class="iconbtn" title="Сменить пароль" aria-label="Сменить пароль">
+      <svg class="icon" aria-hidden="true"><use href="#i-key"></use></svg>
+    </a>
+    <span class="user" title="Вы вошли как <%= admin.login %>">
+      <span class="avatar"><%= initials(admin.login) %></span><span class="user__name"><%= admin.login %></span>
+    </span>
+    <form method="POST" action="/logout" class="logout">
+      <button class="iconbtn" type="submit" title="Выйти" aria-label="Выйти">
+        <svg class="icon" aria-hidden="true"><use href="#i-logout"></use></svg>
+      </button>
+    </form>
+  </div>
+</header>
+<% } %>
+<main class="container">
+  <% if (typeof flash !== 'undefined' && flash) { %>
+    <div class="flash" role="status"><svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg><span><%= flash %></span></div>
+  <% } %>

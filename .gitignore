@@ -1,0 +1,17 @@
+# Зависимости, ставятся из package-lock.json
+node_modules/
+
+# Секреты: токен бота, пароль БД, SESSION_SECRET. Пример лежит в .env.example
+.env
+
+# Установщик собирается скриптом deploy/build-installer.sh, в репозиторий не кладём
+deploy/install-on-server.sh
+
+# Архивы деплоя
+*.tar.gz
+
+# Настройки редакторов и ОС
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

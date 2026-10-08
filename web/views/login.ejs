@@ -1,0 +1,34 @@
+<%- include('partials/header', { pageTitle: 'Вход' }) %>
+
+<div class="login-box">
+  <div class="login-brand">
+    <span class="brand__mark"><svg class="icon" aria-hidden="true"><use href="#i-tool"></use></svg></span>
+    <span>Поддержка <small>админка</small></span>
+  </div>
+  <h1>Вход в панель</h1>
+  <% if (error) { %>
+    <div class="error" role="alert"><%= error %></div>
+  <% } %>
+  <% if (typeof oldPassword !== 'undefined' && oldPassword) { %>
+    <div class="alert-warn" role="alert">
+      <svg class="icon icon-lg" aria-hidden="true"><use href="#i-key"></use></svg>
+      <div>
+        <b>Это старый пароль — его сменили.</b><br />
+        Новый пароль попросите у администратора панели.
+      </div>
+    </div>
+  <% } %>
+  <form method="POST" action="/login" autocomplete="off" class="form-stack">
+    <label class="field">
+      <span class="field__label">Логин</span>
+      <input name="login" required autofocus autocomplete="username" />
+    </label>
+    <label class="field">
+      <span class="field__label">Пароль</span>
+      <input name="password" type="password" required autocomplete="current-password" />
+    </label>
+    <button type="submit" class="btn btn-primary">Войти</button>
+  </form>
+</div>
+
+<%- include('partials/footer') %>

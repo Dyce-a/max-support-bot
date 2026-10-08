@@ -1,0 +1,151 @@
+<%- include('../partials/header', { pageTitle: 'QR-коды аудиторий' }) %>
+
+<div class="pagehead"><h1>QR-коды аудиторий</h1></div>
+
+<% if (!publicUrl.startsWith('https://')) { %>
+  <div class="alert-warn" role="alert">
+    <svg class="icon icon-lg" aria-hidden="true"><use href="#i-qr"></use></svg>
+    <div>
+      <b>PUBLIC_URL сейчас <code><%= publicUrl %></code></b> — по такой ссылке камера на телефоне
+      не заработает. Пропишите в <code>.env</code> публичный https-адрес и перезапустите сервис,
+      иначе напечатанные наклейки придётся перевыпускать.
+    </div>
+  </div>
+<% } %>
+
+<p class="hint lead">
+  В наклейку зашита ссылка <code><%= publicUrl %>/s/КОД</code>. Её понимает и сканер в боте,
+  и обычная камера телефона — во втором случае откроется страница аудитории с кнопкой перехода в MAX.
+</p>
+
+<% if (missing) { %>
+  <form method="POST" action="/qr/backfill" style="margin-bottom:14px">
+    <button class="btn btn-primary" type="submit">
+      Выдать коды аудиториям без QR (<%= missing %>)
+    </button>
+  </form>
+<% } %>
+
+<form method="GET" action="/qr" class="filters card">
+  <input type="search" name="q" value="<%= q || '' %>" placeholder="Поиск: номер, корпус, этаж, код…" aria-label="Поиск аудитории" />
+  <select name="building_id" onchange="this.form.submit()">
+    <option value="">Все корпуса</option>
+    <% buildings.forEach(b => { %>
+      <option value="<%= b.id %>" <%= String(buildingId) === String(b.id) ? 'selected' : '' %>><%= b.name %></option>
+    <% }) %>
+  </select>
+  <select name="floor" onchange="this.form.submit()">
+    <option value="">Все этажи</option>
+    <% floors.forEach(f => { %>
+      <option value="<%= f.floor %>" <%= String(floor) === String(f.floor) ? 'selected' : '' %>><%= f.floor %> этаж</option>
+    <% }) %>
+  </select>
+  <a href="/qr" class="btn btn-ghost">Сбросить</a>
+</form>
+
+<form method="GET" action="/qr/print" target="_blank" id="printForm">
+  <div class="filters filters--bar">
+    <label class="chk" style="margin:0">
+      <input type="checkbox" id="checkAll" /> Выбрать все
+    </label>
+    <div>
+      <button class="btn btn-primary" type="submit">
+        <svg class="icon" aria-hidden="true"><use href="#i-printer"></use></svg>Печать выбранных
+      </button>
+      <a class="btn" target="_blank"
+         href="/qr/print?building_id=<%= buildingId ?? '' %>&floor=<%= floor ?? '' %>&q=<%= encodeURIComponent(q || '') %>">
+        Печать всего списка
+      </a>
+    </div>
+  </div>
+
+  <table class="grid">
+    <thead>
+      <tr>
+        <th style="width:34px"></th>
+        <th>QR</th>
+        <th>Корпус</th>
+        <th>Этаж</th>
+        <th>Аудитория</th>
+        <th>Тип</th>
+        <th>Код</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (!rooms.length) { %>
+        <tr><td colspan="8" class="muted center">Аудиторий не найдено</td></tr>
+      <% } %>
+      <% rooms.forEach(r => { %>
+        <tr>
+          <td>
+            <% if (r.qr_code) { %>
+              <input type="checkbox" name="id" value="<%= r.id %>" class="pick" />
+            <% } %>
+          </td>
+          <td data-label="QR">
+            <% if (r.qr_code) { %>
+              <img src="/qr/png/<%= r.qr_code %>?size=96" width="48" height="48"
+                   alt="QR <%= r.number %>" style="display:block" />
+            <% } else { %>
+              <span class="muted">—</span>
+            <% } %>
+          </td>
+          <td data-label="Корпус"><%= r.building_name || '—' %></td>
+          <td data-label="Этаж"><%= r.floor %></td>
+          <td data-label="Аудитория"><b><%= r.number %></b></td>
+          <td class="muted" data-label="Тип"><%= r.room_type_name || '—' %></td>
+          <td class="mono" data-label="Код"><%= r.qr_code || '—' %></td>
+          <td class="actions">
+            <% if (r.qr_code) { %>
+              <a class="btn btn-sm" href="/qr/png/<%= r.qr_code %>?size=600&download=1">PNG</a>
+              <a class="btn btn-sm btn-icon" target="_blank" href="/qr/print?id=<%= r.id %>"
+                 title="Печать наклейки" aria-label="Печать наклейки">
+                <svg class="icon" aria-hidden="true"><use href="#i-printer"></use></svg>
+              </a>
+            <% } %>
+            <button class="btn btn-sm btn-danger btn-icon" type="submit"
+                    formmethod="POST" formaction="/qr/<%= r.id %>/regen" formtarget="_self"
+                    title="Выпустить новый код" aria-label="Выпустить новый код"
+                    onclick="return confirm('Выпустить новый код? Старая наклейка перестанет работать.')">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh"></use></svg>
+            </button>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</form>
+
+<%# В обёртке: панель переходит между страницами без перезагрузки и запускает
+    этот скрипт заново при каждом заходе на /qr — const на верхнем уровне упали бы %>
+<script>
+(() => {
+  const checkAll = document.getElementById('checkAll');
+  const picks    = [...document.querySelectorAll('.pick')];
+  const printForm = document.getElementById('printForm');
+
+  checkAll.addEventListener('change', () => {
+    picks.forEach(c => { c.checked = checkAll.checked; });
+    checkAll.indeterminate = false;
+  });
+
+  // «Выбрать все» должен показывать реальное состояние: сняли одну галочку —
+  // общая перестаёт быть выбранной.
+  picks.forEach(c => c.addEventListener('change', () => {
+    checkAll.checked = picks.length > 0 && picks.every(x => x.checked);
+    checkAll.indeterminate = !checkAll.checked && picks.some(x => x.checked);
+  }));
+
+  // Без единой галочки форма уходила на /qr/print пустой, а там пустой набор
+  // означает «весь список» — и вместо ничего открывались наклейки на все аудитории.
+  printForm.addEventListener('submit', (e) => {
+    if (e.submitter && e.submitter.formMethod === 'post') return;   // это перевыпуск кода
+    if (picks.some(c => c.checked)) return;
+    e.preventDefault();
+    alert('Отметьте аудитории галочками — или нажмите «Печать всего списка».');
+  });
+})();
+</script>
+
+<%- include('../partials/footer') %>

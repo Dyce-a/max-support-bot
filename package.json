@@ -1,0 +1,30 @@
+{
+  "name": "max-support-bot",
+  "version": "1.0.0",
+  "description": "Бот MAX для заявок на ремонт аудиторий + веб-панель администратора",
+  "private": true,
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "seed": "node db/seed.js",
+    "demo": "node db/demo.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [],
+  "author": "K",
+  "license": "ISC",
+  "dependencies": {
+    "@maxhub/max-bot-api": "^0.2.1",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^16.6.1",
+    "ejs": "^5.0.2",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "jsqr": "^1.4.0",
+    "pg": "^8.16.3",
+    "qrcode": "^1.5.4"
+  }
+}

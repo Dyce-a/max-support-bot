@@ -1,0 +1,116 @@
+<%- include('../partials/header', { pageTitle: 'Пользователи' }) %>
+
+<%
+  const ROLE = { user: 'Пользователь', executor: 'Исполнитель', admin: 'Админ' };
+%>
+
+<div class="pagehead">
+  <h1>Пользователи</h1>
+  <span class="count mono"><%= users.length %></span>
+  <label class="search pagehead__search">
+    <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+    <input type="search" placeholder="Имя, категория или MAX ID" aria-label="Поиск пользователя" data-user-search />
+  </label>
+</div>
+<p class="hint lead">
+  Здесь все, кто хоть раз нажал «Старт» в боте. Чтобы человек получал заявки на исполнение,
+  сделайте его исполнителем и отметьте группы неисправностей.
+</p>
+
+<div class="users-wrap">
+  <div class="card tbl" id="user-rows">
+    <div class="ur ur--head" aria-hidden="true">
+      <span>Имя</span><span>Роль</span><span>Группы</span><span title="Незакрытые заявки на человеке">В работе</span><span></span>
+    </div>
+    <% if (!users.length) { %>
+      <div class="empty">Никто ещё не запускал бота</div>
+    <% } %>
+    <% users.forEach(u => { %>
+      <a class="ur" href="/users?u=<%= u.id %>" data-user="<%= u.id %>"
+         <%- selected && selected.id === u.id ? 'aria-current="true"' : '' %>
+         data-search="<%= [u.name, u.category, u.max_id].filter(Boolean).join(' ').toLowerCase() %>">
+        <span class="u-name">
+          <span class="avatar" aria-hidden="true"><%= initials(u.name || u.max_id) %></span>
+          <span class="u-name__text"><b><%= u.name || '(без имени)' %></b><small><%= u.category || 'MAX ' + u.max_id %></small></span>
+        </span>
+        <span class="u-role role role--<%= u.role %>"><%= ROLE[u.role] || u.role %></span>
+        <span class="u-tags">
+          <% if (u.groups_list) { %>
+            <% u.groups_list.split(', ').forEach(g => { %><span class="tag"><%= g %></span><% }) %>
+          <% } else { %>
+            <span class="muted">—</span>
+          <% } %>
+        </span>
+        <span class="u-load mono"><%= u.role === 'user' ? '' : u.active_cnt %></span>
+        <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+      </a>
+    <% }) %>
+    <div class="empty" data-search-empty hidden>Никого не нашлось</div>
+  </div>
+
+  <aside class="card drawer <%= selected ? 'is-open' : '' %>" id="user-drawer" data-live-part="drawer" aria-label="Карточка пользователя">
+    <% if (!selected) { %>
+      <div class="drawer__empty">
+        <svg class="icon" aria-hidden="true"><use href="#i-user"></use></svg>
+        Выберите человека в списке — здесь можно сменить роль и группы.
+      </div>
+    <% } else { const s = selected; const links = linksByUser[s.id]; %>
+      <form method="POST" action="/users/<%= s.id %>/save" class="drawer__form">
+        <div class="drawer__head">
+          <span class="avatar" aria-hidden="true"><%= initials(s.name || s.max_id) %></span>
+          <div>
+            <b><%= s.name || '(без имени)' %></b>
+            <span class="hint"><%= s.category || 'без категории' %> · MAX ID <span class="mono"><%= s.max_id %></span></span>
+          </div>
+          <a href="/users" class="iconbtn drawer__close" data-drawer-close aria-label="Закрыть">
+            <svg class="icon" aria-hidden="true"><use href="#i-x"></use></svg>
+          </a>
+        </div>
+        <div class="drawer__body">
+          <div class="field">
+            <span class="field__label" id="role-label">Роль</span>
+            <div class="seg seg--full" role="radiogroup" aria-labelledby="role-label">
+              <% Object.entries(ROLE).forEach(([code, label]) => { %>
+                <label class="seg__opt">
+                  <input type="radio" name="role" value="<%= code %>" <%= s.role === code ? 'checked' : '' %> />
+                  <span><%= label %></span>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+
+          <%# Группы есть только у исполнителей и админов — блок прячется CSS,
+              когда выбрана роль «Пользователь» %>
+          <div class="drawer__groups">
+            <div class="sect-title">Группы неисправностей</div>
+            <div class="checks">
+              <% groups.forEach(g => { %>
+                <label class="check">
+                  <input type="checkbox" name="group_ids" value="<%= g.id %>" <%= links && links.has(g.id) ? 'checked' : '' %> />
+                  <span><%= g.name %></span>
+                </label>
+              <% }) %>
+            </div>
+            <p class="hint">Заявки из отмеченных групп будут приходить этому человеку в MAX.</p>
+          </div>
+          <p class="hint drawer__nogroups">У пользователя нет групп: заявки на исполнение ему не приходят.</p>
+
+          <p class="hint">
+            <% if (s.role !== 'user') { %>Незакрытых заявок на нём: <b class="mono"><%= s.active_cnt %></b>. <% } %>
+            В боте с <%= fmtDate(s.created_at) %>.
+          </p>
+        </div>
+        <div class="drawer__foot">
+          <a href="/users" class="btn btn-ghost" data-drawer-close>Отмена</a>
+          <button type="submit" class="btn btn-primary">
+            <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>Сохранить
+          </button>
+        </div>
+      </form>
+    <% } %>
+  </aside>
+</div>
+
+<div class="scrim" data-scrim></div>
+
+<%- include('../partials/footer') %>

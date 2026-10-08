@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title><%= room ? room.number + ' — заявка' : 'Код не найден' %></title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #0f1115; color: #f2f4f8;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+    }
+    .card {
+      width: 100%; max-width: 400px;
+      background: #181c24; border: 1px solid #262b36;
+      border-radius: 16px; padding: 22px;
+    }
+    h1 { font-size: 34px; margin: 0 0 4px; }
+    .place { color: #9aa3b2; margin: 0 0 18px; }
+    p { line-height: 1.5; margin: 0 0 14px; }
+    .muted { color: #9aa3b2; font-size: 13px; }
+    .btn {
+      display: block; padding: 13px 16px; margin-top: 14px;
+      border-radius: 12px; background: #2563eb; color: #fff;
+      text-align: center; text-decoration: none; font-size: 15px;
+    }
+    .code {
+      font-family: ui-monospace, Consolas, monospace;
+      letter-spacing: 2px; color: #6b7280; font-size: 13px; margin-top: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <% if (room) { %>
+      <h1><%= room.number %></h1>
+      <p class="place">
+        <%= room.building_name || '' %> · <%= room.floor %> этаж<% if (room.room_type_name) { %> · <%= room.room_type_name %><% } %>
+      </p>
+      <% if (botLink) { %>
+        <p>
+          Здесь что-то сломалось? Откройте бота поддержки в MAX —
+          корпус, этаж и аудитория подставятся сами, останется выбрать неисправность.
+        </p>
+        <a class="btn" href="<%= botLink %>">Открыть бота в MAX</a>
+      <% } else { %>
+        <p>
+          Здесь что-то сломалось? Откройте бота поддержки в MAX, нажмите
+          <b>«Сканировать QR»</b> и наведите камеру на эту же наклейку —
+          корпус, этаж и аудитория подставятся сами.
+        </p>
+      <% } %>
+      <div class="code"><%= room.qr_code %></div>
+    <% } else { %>
+      <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"
+           style="fill:none;stroke:#9aa3b2;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;margin-bottom:12px">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+        <path d="M12 17h.01"/>
+      </svg>
+      <p>Код <b><%= code %></b> не найден.</p>
+      <p class="muted">
+        Наклейку могли заменить или аудиторию удалили из справочника.
+        Сообщите об этом администратору.
+      </p>
+    <% } %>
+  </div>
+</body>
+</html>

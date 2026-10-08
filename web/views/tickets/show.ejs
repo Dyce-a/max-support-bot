@@ -1,0 +1,204 @@
+<%- include('../partials/header', { pageTitle: 'Заявка №' + t.id }) %>
+
+<%
+  const STATUS_LABEL = {
+    new: 'Новая', reviewed: 'Рассмотрена', in_work: 'В работе',
+    postponed: 'Отложена', done: 'Выполнена', rejected: 'Отклонена',
+  };
+  const URG = {
+    low:      { icon: 'i-arrow-down', label: 'Низкая' },
+    high:     { icon: 'i-flag',       label: 'Высокая' },
+    critical: { icon: 'i-flame',      label: 'Срочно' },
+  };
+  const ACTOR_LABEL = {
+    user: 'заявитель', admin: 'админ', executor: 'исполнитель', system: 'система',
+  };
+  // Значок записи в истории: смена статуса — галочка в цвете нового статуса,
+  // остальное — по тому, кто писал
+  const journalIcon = (j) => j.status_to && !j.status_from ? 'i-plus'
+    : j.status_to ? 'i-check'
+    : { system: 'i-bot', executor: 'i-tool' }[j.actor_kind] || 'i-user';
+  const where = [
+    t.building_name,
+    t.floor != null ? `${t.floor} этаж` : null,
+    t.room_number ? `ауд. ${t.room_number}` : null,
+  ].filter(Boolean).join(' · ');
+%>
+
+<a href="/tickets" class="back" data-back>
+  <svg class="icon" aria-hidden="true"><use href="#i-arrow-left"></use></svg>Заявки
+</a>
+
+<div class="tk-head" data-live-part="head">
+  <h1><span class="mono">№<%= t.id %></span> <span class="tk-title"><%= t.group_name || 'Заявка' %><% if (t.type_name) { %> · <%= t.type_name %><% } %></span></h1>
+  <span class="pill" data-st="<%= t.status %>"><%= STATUS_LABEL[t.status] || t.status %></span>
+  <% if (URG[t.urgency]) { %>
+    <span class="urg urg--<%= t.urgency %>"><svg class="icon" aria-hidden="true"><use href="#<%= URG[t.urgency].icon %>"></use></svg><%= URG[t.urgency].label %></span>
+  <% } %>
+  <% if (t.parent_id) { %>
+    <a class="tag" href="/tickets/<%= t.parent_id %>"><svg class="icon" aria-hidden="true"><use href="#i-link"></use></svg>часть заявки №<%= t.parent_id %></a>
+  <% } %>
+  <div class="tk-sub"><%= where || 'Место не указано' %> · создана <%= fmtWhen(t.created_at) %></div>
+</div>
+
+<%# Одна форма на всю карточку. Без JS каждая кнопка отправляет её целиком.
+    С JS (/app.js) каждое действие уходит в фоне и шлёт только своё поле:
+    нажали статус — сохранится статус, а недописанная заметка останется в поле %>
+<form method="POST" action="/tickets/<%= t.id %>/update" class="tk-form" data-ticket-form>
+
+  <div class="card">
+    <div class="card__body statusbar hscroll" role="group" aria-label="Статус заявки">
+      <span class="statusbar__label">Статус</span>
+      <% statuses.forEach(s => { %>
+        <button type="submit" name="status" value="<%= s.code %>" class="stbtn" data-st="<%= s.code %>"
+                aria-pressed="<%= t.status === s.code %>"><%= s.label %></button>
+      <% }) %>
+    </div>
+  </div>
+
+  <div class="tk-grid">
+    <div class="tk-col">
+      <div class="card">
+        <div class="card__head"><h2>Что случилось</h2></div>
+        <div class="card__body">
+          <% if (t.comment) { %>
+            <p class="quote"><%= t.comment %></p>
+          <% } else { %>
+            <p class="muted">Заявитель ничего не написал — только выбрал неисправность.</p>
+          <% } %>
+
+          <%# Ссылку пускаем только http(s): javascript:-ссылка в href выполнилась бы в панели %>
+          <% if (/^https?:\/\//i.test(t.photo_url || '')) { %>
+            <a class="photo" href="<%= t.photo_url %>" target="_blank" rel="noopener">
+              <img class="photo__img" src="<%= t.photo_url %>" alt="Фото к заявке" loading="lazy" />
+              <span><b>Фото от заявителя</b><span class="hint">Открыть в полном размере</span></span>
+            </a>
+          <% } %>
+
+          <dl class="dl">
+            <dt>Автор</dt>
+            <dd><%= t.author_name || 'без имени' %><% if (t.author_category) { %> <span class="muted">· <%= t.author_category %></span><% } %></dd>
+            <dt>MAX ID</dt>        <dd class="mono"><%= t.author_max_id %></dd>
+            <dt>Где</dt>           <dd><%= where || '—' %></dd>
+            <dt>Создана</dt>       <dd><%= fmtDate(t.created_at) %></dd>
+            <dt>Обновлена</dt>     <dd><%= fmtDate(t.updated_at) %></dd>
+            <% if (t.done_at) { %>
+              <dt>Завершена</dt>   <dd><%= fmtDate(t.done_at) %></dd>
+            <% } %>
+          </dl>
+
+          <% if (children && children.length) { %>
+            <div class="sect-title">Привязанные заявки · <%= children.length %></div>
+            <ul class="children">
+              <% children.forEach(c => { %>
+                <li>
+                  <a href="/tickets/<%= c.id %>" class="mono">№<%= c.id %></a>
+                  <span class="pill" data-st="<%= c.status %>"><%= STATUS_LABEL[c.status] || c.status %></span>
+                  <span class="muted"><%= c.group_name || '—' %> · <%= c.type_name || '—' %></span>
+                </li>
+              <% }) %>
+            </ul>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="card" data-live-part="journal">
+        <div class="card__head"><h2>История</h2><span class="count mono"><%= journal.length %></span></div>
+        <div class="card__body">
+          <% if (!journal.length) { %>
+            <p class="muted">Записей пока нет.</p>
+          <% } else { %>
+            <ol class="timeline">
+              <% journal.forEach(j => { %>
+                <li data-key="<%= j.id %>">
+                  <span class="tl-dot" <%- j.status_to ? `data-st="${j.status_to}"` : '' %>>
+                    <svg class="icon" aria-hidden="true"><use href="#<%= journalIcon(j) %>"></use></svg>
+                  </span>
+                  <div>
+                    <div class="tl-meta">
+                      <b><%= j.actor_label || ACTOR_LABEL[j.actor_kind] || j.actor_kind %></b>
+                      <% if (j.actor_label && ACTOR_LABEL[j.actor_kind] && j.actor_label !== ACTOR_LABEL[j.actor_kind]) { %>· <%= ACTOR_LABEL[j.actor_kind] %><% } %>
+                      · <%= fmtWhen(j.created_at) %>
+                    </div>
+                    <% if (j.status_to && j.status_from) { %>
+                      <div class="tl-change">
+                        <span class="pill" data-st="<%= j.status_from %>"><%= STATUS_LABEL[j.status_from] || j.status_from %></span>
+                        <svg class="icon" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+                        <span class="pill" data-st="<%= j.status_to %>"><%= STATUS_LABEL[j.status_to] || j.status_to %></span>
+                      </div>
+                    <% } %>
+                    <% if (j.message) { %><div class="tl-text"><%= j.message %></div><% } %>
+                  </div>
+                </li>
+              <% }) %>
+            </ol>
+          <% } %>
+        </div>
+      </div>
+    </div>
+
+    <div class="tk-col">
+      <div class="card">
+        <div class="card__head"><h2>Назначение</h2></div>
+        <div class="card__body stack">
+          <div class="field">
+            <span class="field__label" id="urg-label">Срочность</span>
+            <%# Переключатель срочности: от зелёного к огню. Радиокнопки — чтобы
+                работало и без JS; бегунок и пламя рисует /app.js %>
+            <div class="seg urgseg" data-level="<%= t.urgency %>" role="radiogroup" aria-labelledby="urg-label">
+              <% urgencies.forEach(u => { %>
+                <label class="seg__opt">
+                  <input type="radio" name="urgency" value="<%= u.code %>" <%= t.urgency === u.code ? 'checked' : '' %> />
+                  <% if (URG[u.code]) { %><svg class="icon" aria-hidden="true"><use href="#<%= URG[u.code].icon %>"></use></svg><% } %>
+                  <span><%= u.label %></span>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+
+          <label class="field">
+            <span class="field__label">Исполнитель</span>
+            <select name="executor_id" data-dirty>
+              <option value="">— не назначен —</option>
+              <% executors.forEach(ex => { %>
+                <option value="<%= ex.id %>" <%= t.executor_id === ex.id ? 'selected' : '' %>>
+                  <%= ex.name || 'MAX ' + ex.max_id %><%= ex.role === 'admin' ? ' (админ)' : '' %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Часть другой заявки</span>
+            <select name="parent_id" data-dirty>
+              <option value="">— нет —</option>
+              <% possibleParents.forEach(p => { %>
+                <option value="<%= p.id %>" <%= t.parent_id === p.id ? 'selected' : '' %>>
+                  №<%= p.id %> — <%= p.group_name || '—' %> / <%= p.type_name || '—' %>
+                </option>
+              <% }) %>
+            </select>
+            <span class="hint">Статус родительской заявки будет переходить и на эту</span>
+          </label>
+
+          <button type="submit" class="btn btn-primary" data-action="assign">
+            <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>Сохранить
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h2>Запись в историю</h2></div>
+        <div class="card__body stack">
+          <textarea name="comment_add" rows="3" aria-label="Текст записи"
+                    placeholder="Например: позвонил заявителю, починят до обеда"></textarea>
+          <button type="submit" class="btn" data-action="note">
+            <svg class="icon" aria-hidden="true"><use href="#i-send"></use></svg>Добавить
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<%- include('../partials/footer') %>

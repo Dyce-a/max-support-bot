@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Печать QR-наклеек</title>
+  <style>
+    /* Палитра, скругления и приёмы взяты с сайта нашего института */
+    :root {
+      --accent: #2E97F0;
+      --navy:   #12305C;
+      --pale:   #DCEBFA;
+      --line:   #DBE3EC;
+      --shadow: rgba(12, 44, 91, .3);
+      --font: 'IBM Plex Sans', IBMPlexSans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+
+      /* Базовый размер наклейки. Всё внутри свёрстано под него в мм, а на листе
+         наклейка ужимается одним transform: scale() — так макет не разъезжается
+         ни при одной штуке на A3, ни при шестнадцати на A5. */
+      --sw: 62mm;
+      --sh: 89mm;
+
+      /* Масштаб предпросмотра (лист целиком в окне) — ставит JS на .sheets.
+         На печати всегда 1. */
+      --z: 1;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--navy); background: #eef5fb;
+      /* Без этого браузер выкидывает фоны при печати и синяя шапка уходит в белое */
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+
+    /* ================= Панель управления (на печать не идёт) ================= */
+    .toolbar {
+      position: sticky; top: 0; z-index: 20;
+      background: #fff; border-bottom: 1px solid var(--line);
+      padding: 8px 12px;
+      display: flex; flex-direction: column; gap: 8px;
+      box-shadow: 0 2px 8px rgba(12, 44, 91, .07);
+    }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .row--sep { border-top: 1px dashed var(--line); padding-top: 8px; }
+
+    .btn {
+      padding: 8px 16px; border: 2px solid var(--accent);
+      background: var(--pale); color: var(--navy);
+      border-radius: 10px; cursor: pointer;
+      font-family: inherit; font-size: 13px; font-weight: 600;
+      text-decoration: none; transition: background .2s ease, color .2s ease;
+      white-space: nowrap;
+    }
+    .btn:hover { background: var(--accent); color: #fff; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--navy); border-color: var(--navy); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; border-width: 1.5px; border-radius: 8px; }
+    .btn svg {
+      width: 1em; height: 1em; margin-right: 6px; vertical-align: -.14em;
+      fill: none; stroke: currentColor; stroke-width: 2;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    label.f { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+    select, input[type=number], input[type=text] {
+      font-family: inherit; font-size: 13px; color: var(--navy);
+      padding: 6px 8px; border: 1.5px solid var(--line); border-radius: 8px; background: #fff;
+    }
+    select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    input[type=number] { width: 68px; }
+
+    /* Переключатели «сколько на листе» и «режим» */
+    .seg { display: flex; gap: 4px; flex-wrap: wrap; }
+    .seg button {
+      min-width: 34px; padding: 6px 9px;
+      font-family: inherit; font-size: 13px; font-weight: 700;
+      color: var(--navy); background: #fff;
+      border: 1.5px solid var(--line); border-radius: 8px; cursor: pointer;
+    }
+    .seg button:hover { border-color: var(--accent); }
+    .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .spacer { margin-left: auto; }
+    .counter { font-size: 13px; opacity: .7; white-space: nowrap; }
+    .warn {
+      font-size: 12px; font-weight: 700; color: #92400e;
+      background: #fef3c7; border-radius: 8px; padding: 4px 9px;
+    }
+    .hint { font-size: 12px; opacity: .65; }
+    .hidden { display: none !important; }
+
+    /* ================= Рабочая область ================= */
+    .work { display: flex; align-items: flex-start; }
+
+    /* --- Список аудиторий --- */
+    .side {
+      flex: 0 0 260px; width: 260px;
+      background: #fff; border-right: 1px solid var(--line);
+      display: flex; flex-direction: column;
+      position: sticky; top: 0;
+      height: 100vh;
+    }
+    .side__top { padding: 10px; border-bottom: 1px solid var(--line); }
+    .side__top input { width: 100%; }
+    .side__list { flex: 1; overflow-y: auto; padding: 6px; }
+    .side__foot { padding: 8px 10px; border-top: 1px solid var(--line); font-size: 11.5px; opacity: .65; }
+
+    .item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px; border-radius: 8px; cursor: grab;
+      border: 1.5px solid transparent;
+    }
+    .item:hover { background: var(--pale); border-color: var(--accent); }
+    .item:active { cursor: grabbing; }
+    .item img { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 3px; }
+    .item__txt { flex: 1; min-width: 0; line-height: 1.25; }
+    .item__num, .item__sub { display: block; }
+    .item__num { font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
+    .item__sub { font-size: 11px; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item__n {
+      flex: 0 0 auto; min-width: 20px; text-align: center;
+      background: var(--accent); color: #fff; border-radius: 999px;
+      font-size: 11px; font-weight: 700; padding: 1px 6px;
+    }
+    .item__add {
+      flex: 0 0 auto; width: 24px; height: 24px; padding: 0;
+      border: 1.5px solid var(--accent); border-radius: 7px;
+      background: #fff; color: var(--accent); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* Плюс и крестик — не символы, а линии: у глифа своя высота над базовой
+       линией, из-за неё он вставал в круглой кнопке выше центра. */
+    .item__add svg, .cell__x svg {
+      width: 58%; height: 58%; display: block;
+      fill: none; stroke: currentColor; stroke-width: 2.6;
+      stroke-linecap: round;
+    }
+    .item__add:hover { background: var(--accent); color: #fff; }
+    .side__empty { padding: 20px 10px; text-align: center; font-size: 13px; opacity: .6; }
+
+    /* --- Полотно с листами --- */
+    /* Прокрутка своя, а не общая для страницы: иначе при листе шире окна
+       уезжал бы и список аудиторий слева. */
+    .stage { flex: 1; min-width: 0; padding: 16px; overflow-x: auto; }
+    .sheets {
+      display: flex; flex-direction: column; gap: 26px;
+      /* Лист, который шире полотна, при обычном center вылезает на обе стороны
+         и левым краем прячется под списком — до него уже не докрутить.
+         safe center в такой ситуации прижимает лист к левому краю. */
+      align-items: center;
+      align-items: safe center;
+    }
+
+    /* Подпись листа и «убрать лист» — в обёртке, а не внутри .sheet: у листа
+       overflow: hidden (наклейка, вылезшая за край, не должна рисоваться мимо
+       бумаги), и всё, что выше верхней кромки, срезалось бы вместе с ней. */
+    .sheet__box { position: relative; padding-top: calc(18px / var(--z)); }
+
+    .sheet {
+      position: relative;
+      width: var(--pw); height: var(--ph);
+      background: #fff; box-shadow: 0 6px 18px var(--shadow);
+      overflow: hidden;
+    }
+    /* Всё, что не печатается, а только помогает мышью — подписи, крестики, ручки —
+       делим ещё и на масштаб предпросмотра (--z). Иначе при обзоре в 40% ручка
+       поворота становится в 2,5 раза мельче и по ней не попасть. */
+    .sheet__no {
+      position: absolute; top: 0; left: 0;
+      font-size: calc(11px / var(--z)); font-weight: 700; opacity: .5;
+      white-space: nowrap;
+    }
+    .sheet__del {
+      position: absolute; top: 0; right: 0;
+      border: none; background: none; cursor: pointer;
+      font-family: var(--font); font-size: calc(12px / var(--z));
+      font-weight: 700; line-height: 1; color: #c0392b;
+    }
+    /* Поля листа: сетка отступает внутрь, а свободный слой лежит во весь лист,
+       чтобы координаты наклейки считались от угла бумаги, а не от края полей. */
+    .sheet__grid { position: absolute; inset: var(--pad); display: grid; grid-auto-rows: 1fr; }
+    .sheet__free { position: absolute; inset: 0; }
+    .sheet__margins { position: absolute; border: calc(1px / var(--z)) dashed rgba(46, 151, 240, .45); pointer-events: none; }
+    .cell {
+      position: relative; min-width: 0; min-height: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* Коробка ровно по видимому размеру наклейки: ячейка бывает заметно больше
+       (наклейка вписывается в неё по меньшей стороне), и без этой обёртки крестик
+       «убрать» уезжал бы в угол ячейки — своё место на каждом формате листа. */
+    .cell__box { position: relative; flex: 0 0 auto; }
+    .cell .sticker { position: absolute; top: 0; left: 0; transform-origin: top left; transform: scale(var(--k)); }
+    .cell__x {
+      position: absolute; z-index: 3;
+      top: calc(3px / var(--z)); right: calc(3px / var(--z));
+      width: calc(22px / var(--z)); height: calc(22px / var(--z));
+      padding: 0; border-radius: 50%;
+      border: calc(1.5px / var(--z)) solid #c0392b; background: #fff; color: #c0392b;
+      cursor: pointer; opacity: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .cell:hover .cell__x { opacity: 1; }
+    .cell.drop-to { box-shadow: inset 0 0 0 3px var(--accent); }
+    .cell.drop-to .cell__box { opacity: .45; }
+
+    /* Свободная расстановка: наклейка висит по центру своих координат,
+       поворот и масштаб крутятся вокруг того же центра. */
+    .place {
+      position: absolute;
+      width: var(--sw); height: var(--sh);
+      margin-left: calc(var(--sw) / -2); margin-top: calc(var(--sh) / -2);
+      transform: rotate(var(--rot)) scale(var(--k));
+      cursor: move; touch-action: none;
+    }
+    /* Рамка и ручки живут внутри повёрнутой и уменьшенной наклейки, поэтому их
+       размеры делим на общий масштаб (--k наклейки × --z предпросмотра): на экране
+       ручка всегда одного размера, за какую наклейку ни возьмись. */
+    .place { --m: calc(var(--k) * var(--z)); }
+    .place.sel { outline: calc(2px / var(--m)) solid var(--accent); outline-offset: calc(2px / var(--m)); }
+    .handle {
+      position: absolute; display: none; z-index: 4;
+      width: calc(16px / var(--m)); height: calc(16px / var(--m));
+      border-radius: 50%; background: #fff;
+      border: calc(2px / var(--m)) solid var(--accent);
+      touch-action: none;
+    }
+    .place.sel .handle { display: block; }
+    .h-scale { right: calc(-8px / var(--m)); bottom: calc(-8px / var(--m)); cursor: nwse-resize; }
+    /* Ручка поворота сидит на верхней грани, а не над ней: у наклеек верхнего
+       ряда всё, что выше края листа, срезается overflow у .sheet. */
+    .h-rot {
+      left: 50%; margin-left: calc(-8px / var(--m)); top: calc(-8px / var(--m));
+      background: var(--accent); cursor: grab;
+    }
+
+    .drop-hi { outline: 3px dashed var(--accent); outline-offset: -3px; }
+
+    /* ================= Наклейка ================= */
+    .sticker {
+      width: var(--sw); height: var(--sh);
+      background: #fff;
+      border: 1.5px solid var(--accent);
+      border-radius: 16px;
+      overflow: hidden;
+      break-inside: avoid; page-break-inside: avoid;
+      display: flex; flex-direction: column;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    /* Пунктир по линии реза — режется ножницами ровно по контуру */
+    .cuts .sticker { outline: .5pt dashed #c2cedb; outline-offset: 1.5mm; }
+
+    /* --- Синяя шапка: белая плашка с логотипом + название --- */
+    .head {
+      flex: 0 0 auto;
+      background: var(--accent); color: #fff;
+      padding: 2mm 3mm;
+      display: flex; align-items: center; gap: 2.2mm;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .head__logo {
+      flex: 0 0 auto;
+      width: 5.6mm; height: 5.6mm; padding: .8mm;
+      background: #fff; border-radius: 1.4mm;
+      color: var(--accent);          /* встроенная марка рисуется currentColor */
+      display: flex; align-items: center; justify-content: center;
+    }
+    .head__logo svg { width: 100%; height: 100%; display: block; }
+    .head__org {
+      font-size: 7.5pt; font-weight: 700;
+      letter-spacing: .8px; text-transform: uppercase;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* --- Тело --- */
+    .body {
+      flex: 1; min-height: 0;
+      padding: 3.5mm 3mm 2.5mm;
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center;
+    }
+
+    /* Номер аудитории теперь бывает и словом («Санузел»), а не только числом,
+       поэтому кегль подбираем по длине — иначе длинная надпись вылезает за карточку. */
+    .room {
+      font-size: 26pt; font-weight: 700;
+      line-height: 1; letter-spacing: -1px;
+      max-width: 100%; overflow-wrap: anywhere;
+    }
+    .room--md { font-size: 17pt; letter-spacing: -.5px; }
+    .room--sm { font-size: 12pt; line-height: 1.15; letter-spacing: 0; }
+
+    /* Корпус и этаж мелкой строкой: номера аудиторий не уникальны, и без этой
+       подписи две наклейки «Санузел» уже не различить. */
+    .where {
+      margin-top: .8mm;
+      font-size: 6.5pt; font-weight: 600; opacity: .55;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    }
+
+    /* Сцена: QR слева, дракон справа — он выше рамки и «встаёт» рядом с номером */
+    .scene {
+      position: relative; flex: 1; min-height: 0;
+      width: 100%; margin-top: 1.5mm;
+      display: flex; align-items: flex-end;
+    }
+
+    /* QR держим на белом с тонкой рамкой: максимальный контраст для сканера */
+    .qr {
+      border: 1px solid var(--line); border-radius: 3mm;
+      /* Поле 2.8 мм, а не 1.8: на него ложатся когти дракона, и код всё равно
+         остаётся с нетронутой белой зоной вокруг. */
+      padding: 2.8mm; line-height: 0; background: #fff;
+      /* Рамка приподнята над низом сцены: иначе её нижний край режет ступню
+         дракона. В исходном макете так же — низ рамки на 75% высоты карточки,
+         лапы на 80%. */
+      margin-bottom: 5mm;
+    }
+    /* 27 мм при 33 модулях — ~0.8 мм на модуль, вдвое выше порога уверенного скана.
+       Картинка векторная (/qr/svg/КОД), поэтому и в уменьшенной наклейке код чёткий. */
+    .qr img { width: 27mm; height: 27mm; display: block; }
+
+    /* Дракон держит рамку QR: когти заходят за её край на ~1.4 мм.
+       Отступ подобран по силуэту лапы — линия рамки проходит позади когтей и
+       просвечивает в промежутках между ними, и на этой глубине просветов
+       меньше всего. Правее — лапа перестаёт держать, левее — просветов больше,
+       а на 1.6 мм дальше уже начинается картинка кода с тихой зоной всего
+       в 2 модуля (margin: 2 в qrcode), туда заходить нельзя.
+       Ступня — самая левая точка силуэта — проходит ниже рамки, её держит
+       margin-bottom у .qr, а не этот отступ.
+       Пропорции файла 325x654, поэтому задаём только высоту. */
+    .dragon {
+      position: absolute; right: 3mm; bottom: -.5mm;
+      height: 44mm; width: auto; display: block;
+    }
+
+    /* Пилюля с подписью — приём с тегов на карточках направлений */
+    .cta {
+      margin-top: 2mm;
+      background: var(--pale); color: var(--navy);
+      border-radius: 999px; padding: 1.3mm 4mm;
+      font-size: 8pt; font-weight: 700; line-height: 1.2;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+
+    /* --- Нижняя плашка с кодом --- */
+    .foot {
+      flex: 0 0 auto;
+      background: var(--pale);
+      padding: 1.6mm 3mm; text-align: center;
+      font-family: ui-monospace, Consolas, "Courier New", monospace;
+      font-size: 8pt; font-weight: 700;
+      letter-spacing: 3px; color: var(--accent);
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+
+    .empty {
+      margin: 40px auto; max-width: 460px; padding: 24px;
+      text-align: center; background: #fff;
+      border: 2px solid var(--accent); border-radius: 18px;
+    }
+
+    /* ================= Свой диалог вместо confirm() ================= */
+    .modal {
+      position: fixed; inset: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+      background: rgba(12, 44, 91, .45);
+    }
+    .modal__card {
+      width: 100%; max-width: 400px;
+      background: #fff; border: 2px solid var(--accent); border-radius: 18px;
+      padding: 22px 22px 18px;
+      box-shadow: 0 18px 40px rgba(12, 44, 91, .35);
+      animation: pop .16s ease-out;
+    }
+    @keyframes pop { from { transform: translateY(8px) scale(.98); opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { .modal__card { animation: none; } }
+    .modal__title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .modal__text { font-size: 13.5px; line-height: 1.45; opacity: .75; }
+    .modal__row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .btn-danger {
+      border-color: #e6b4ac; background: #fff5f4; color: #c0392b;
+    }
+    .btn-danger:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
+
+    @media print {
+      body { background: #fff; }
+      .toolbar, .side, .sheet__no, .sheet__del, .cell__x,
+      .handle, .sheet__margins, .empty, .modal { display: none !important; }
+      .work { display: block; }
+      /* Прокрутку полотна на печать не тащим: контейнер со своим скроллом
+         браузер норовит напечатать одной видимой страницей. */
+      .stage { padding: 0; overflow: visible; }
+      /* Масштаб предпросмотра на печать не идёт: лист печатается один к одному */
+      .sheets { display: block; zoom: 1 !important; gap: 0; }
+      .sheet { box-shadow: none; margin: 0; overflow: visible; }
+      .sheet__box {
+        padding: 0;
+        break-after: page; page-break-after: always;
+      }
+      .sheet__box:last-child { break-after: auto; page-break-after: auto; }
+      .place.sel { outline: none; }
+    }
+  </style>
+  <%# Размер страницы зависит от выбранного формата — правило подставляет JS %>
+  <style id="page-rule">@page { size: 210mm 297mm; margin: 0; }</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="row">
+    <button class="btn btn-primary" id="doPrint">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 9V2h12v7"/>
+        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+        <rect x="6" y="14" width="12" height="8" rx="1"/>
+      </svg>Печать
+    </button>
+    <a class="btn" href="/qr">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>К списку
+    </a>
+
+    <label class="f">Лист
+      <select id="paper">
+        <option value="a3">A3 · 297×420</option>
+        <option value="a4" selected>A4 · 210×297</option>
+        <option value="a5">A5 · 148×210</option>
+        <option value="a6">A6 · 105×148</option>
+        <option value="custom">Свой размер</option>
+      </select>
+    </label>
+    <label class="f hidden" id="customBox">
+      <input type="number" id="paperW" min="40" max="1000" step="1" value="210" /> ×
+      <input type="number" id="paperH" min="40" max="1000" step="1" value="297" /> мм
+    </label>
+    <label class="f">
+      <select id="orient">
+        <option value="portrait">Книжная</option>
+        <option value="landscape">Альбомная</option>
+      </select>
+    </label>
+
+    <span class="counter" id="counter"></span>
+    <span class="warn hidden" id="warn"></span>
+  </div>
+
+  <div class="row row--sep">
+    <label class="f">На листе</label>
+    <div class="seg" id="presets"></div>
+    <label class="f hidden" id="customGrid">
+      <input type="number" id="cols" min="1" max="20" step="1" value="3" /> ×
+      <input type="number" id="rows" min="1" max="20" step="1" value="3" />
+    </label>
+    <label class="f">Поля <input type="number" id="margin" min="0" max="40" step="1" value="8" /> мм</label>
+    <label class="f">Зазор <input type="number" id="gap" min="0" max="40" step="1" value="4" /> мм</label>
+    <label class="f">Размер <input type="number" id="size" min="20" max="100" step="5" value="100" /> %</label>
+    <label class="f"><input type="checkbox" id="cuts" checked /> Линии реза</label>
+  </div>
+
+  <div class="row row--sep">
+    <label class="f">Режим</label>
+    <div class="seg" id="modes">
+      <button type="button" data-mode="grid" class="on">Сетка</button>
+      <button type="button" data-mode="free">Свободно</button>
+    </div>
+    <button class="btn btn-sm" id="arrange">Разложить по сетке</button>
+    <button class="btn btn-sm hidden" id="addSheet">+ Лист</button>
+    <button class="btn btn-sm" id="clearAll">Очистить</button>
+    <label class="f">Экран
+      <input type="range" id="zoom" min="20" max="150" step="5" value="100" style="width:110px" />
+    </label>
+    <span class="hint" id="zoomVal">100%</span>
+  </div>
+
+  <%# Настройки одной наклейки — появляются, когда в свободном режиме что-то выбрано %>
+  <div class="row row--sep hidden" id="inspector">
+    <b id="insTitle" style="font-size:13px"></b>
+    <label class="f">X <input type="number" id="insX" step="0.5" /> мм</label>
+    <label class="f">Y <input type="number" id="insY" step="0.5" /> мм</label>
+    <label class="f">Размер <input type="number" id="insK" min="10" max="400" step="1" /> %</label>
+    <label class="f">Угол <input type="number" id="insR" min="-180" max="360" step="1" /> °</label>
+    <button class="btn btn-sm" data-rot="-90">⟲ 90°</button>
+    <button class="btn btn-sm" data-rot="90">⟳ 90°</button>
+    <button class="btn btn-sm" id="insCopy">Дублировать</button>
+    <button class="btn btn-sm" id="insDel" style="border-color:#e6b4ac;color:#c0392b">Удалить</button>
+    <span class="hint">Тянуть — мышью, ручка снизу справа — размер, сверху — поворот (Shift — шаг 15°).</span>
+  </div>
+</div>
+
+<div class="work">
+  <aside class="side">
+    <div class="side__top">
+      <input type="text" id="q" placeholder="Поиск: номер, корпус, этаж, код…" autocomplete="off" />
+    </div>
+    <div class="side__list" id="list"></div>
+    <div class="side__foot">Перетащите аудиторию на лист или нажмите «+».</div>
+  </aside>
+
+  <div class="stage">
+    <div class="sheets" id="sheets"></div>
+    <div class="empty hidden" id="empty">
+      На листе пусто. Перетащите аудиторию из списка слева или нажмите «+».
+    </div>
+    <noscript>
+      <div class="empty">Конструктор листа работает только с включённым JavaScript.</div>
+    </noscript>
+  </div>
+</div>
+
+<%# Диалог подтверждения. Системный confirm() выпадает из оформления панели
+    и по-разному выглядит в каждом браузере. %>
+<div class="modal hidden" id="modal">
+  <div class="modal__card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal__title" id="modalTitle"></div>
+    <div class="modal__text" id="modalText"></div>
+    <div class="modal__row">
+      <button type="button" class="btn" id="modalNo">Отмена</button>
+      <button type="button" class="btn btn-danger" id="modalYes">Убрать</button>
+    </div>
+  </div>
+</div>
+
+<%# Заготовка наклейки: JS клонирует её на каждую аудиторию %>
+<template id="tpl">
+  <div class="sticker">
+    <div class="head">
+      <span class="head__logo">
+        <% if (logoSvg) { %>
+          <%- logoSvg %>
+        <% } else { %>
+          <%# Два смещённых квадрата; evenodd вырезает белый просвет на пересечении %>
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path fill="currentColor" fill-rule="evenodd" d="M35 0h65v65H35zM0 35h65v65H0z"/>
+          </svg>
+        <% } %>
+      </span>
+      <span class="head__org"><%= orgName %></span>
+    </div>
+
+    <div class="body">
+      <div class="room" data-f="number"></div>
+      <div class="where" data-f="where"></div>
+
+      <div class="scene">
+        <div class="qr"><img data-f="qr" alt="" draggable="false" /></div>
+        <%# Талисман института. Если файла нет — картинку убираем, чтобы вместо
+            неё не печаталась иконка «битое изображение». %>
+        <img class="dragon" src="/dragon.png" alt="" draggable="false" onerror="this.remove()" />
+      </div>
+
+      <div class="cta">Если что-то случилось</div>
+    </div>
+
+    <div class="foot" data-f="code"></div>
+  </div>
+</template>
+
+<script type="application/json" id="data-rooms"><%- JSON.stringify(allRooms).replace(/</g, '\\u003c') %></script>
+<script type="application/json" id="data-picked"><%- JSON.stringify(rooms.map(r => r.id)) %></script>
+<script src="/print-layout.js"></script>
+
+</body>
+</html>

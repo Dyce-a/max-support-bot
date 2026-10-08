@@ -1,0 +1,18 @@
+</main>
+<% if (admin) { %>
+  <%# На телефоне верхнее меню прячется, разделы — внизу, под большим пальцем %>
+  <nav class="bottomnav" aria-label="Разделы">
+    <% [
+      { href: '/tickets', icon: 'i-inbox', label: 'Заявки' },
+      { href: '/refs',    icon: 'i-book',  label: 'Справочники' },
+      { href: '/qr',      icon: 'i-qr',    label: 'QR' },
+      { href: '/users',   icon: 'i-users', label: 'Люди' },
+    ].forEach(n => { %>
+      <a href="<%= n.href %>" <%- urlPath.startsWith(n.href) ? 'aria-current="page"' : '' %>>
+        <svg class="icon" aria-hidden="true"><use href="#<%= n.icon %>"></use></svg><%= n.label %>
+      </a>
+    <% }) %>
+  </nav>
+<% } %>
+</body>
+</html>

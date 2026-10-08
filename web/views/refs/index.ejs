@@ -1,0 +1,134 @@
+<%- include('../partials/header', { pageTitle: 'Справочники' }) %>
+
+<div class="pagehead">
+  <h1>Справочники</h1>
+</div>
+
+<nav class="tabs hscroll" aria-label="Справочник">
+  <% refs.forEach(r => { %>
+    <a href="/refs/<%= r.key %>" <%- refKey === r.key ? 'aria-current="page"' : '' %>><%= r.title %></a>
+  <% }) %>
+</nav>
+
+<% if (!refKey) { %>
+  <div class="card empty-card">
+    <svg class="icon" aria-hidden="true"><use href="#i-book"></use></svg>
+    <p>Выберите справочник сверху: корпуса, аудитории, типы аудиторий, группы и виды неисправностей.</p>
+  </div>
+<% } else { %>
+
+  <%
+    // утилита: нарисовать значение ячейки красиво
+    function cellValue(item, field, cols) {
+      const v = item[field];
+      const col = cols.find(c => c.field === field);
+      if (col && col.type === 'select' && col.options && v != null) {
+        const o = col.options.find(o => String(o.value) === String(v));
+        if (o) return o.label;
+      }
+      return v == null ? '—' : v;
+    }
+
+    // Подпись колонки. В таблице часто показывается не само поле, а его название
+    // из соседней таблицы (group_name вместо group_id) — подпись берём у поля *_id,
+    // иначе в заголовке светилось техническое имя
+    function colLabel(field) {
+      const col = cols.find(c => c.field === field)
+        || cols.find(c => c.field === field.replace(/_(name|label)$/, '_id'));
+      return col ? col.label : field;
+    }
+  %>
+
+  <div class="refs-grid">
+    <div class="refs-list">
+      <div class="section-head">
+        <h2><%= refTitle %></h2>
+        <span class="count mono"><%= items.length %></span>
+      </div>
+      <table class="grid">
+        <thead>
+          <tr>
+            <% displayColumns.forEach(f => { %>
+              <th><%= colLabel(f) %></th>
+            <% }) %>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (!items.length) { %>
+            <tr><td colspan="<%= displayColumns.length + 1 %>" class="muted center">Нет записей</td></tr>
+          <% } %>
+          <% items.forEach(item => { %>
+            <tr <%- editing && editing.id === item.id ? 'class="is-editing"' : '' %>>
+              <% displayColumns.forEach(f => { %>
+                <td data-label="<%= colLabel(f) %>" <%- f === 'id' ? 'class="mono muted"' : '' %>><%= cellValue(item, f, cols) %></td>
+              <% }) %>
+              <td class="actions">
+                <a href="/refs/<%= refKey %>?edit=<%= item.id %>"
+                   class="btn btn-sm btn-icon" title="Редактировать" aria-label="Редактировать">
+                  <svg class="icon" aria-hidden="true"><use href="#i-edit"></use></svg>
+                </a>
+                <form method="POST" action="/refs/<%= refKey %>/<%= item.id %>/delete"
+                      onsubmit="return confirm('Удалить запись?')" class="inline-form">
+                  <button class="btn btn-sm btn-danger btn-icon" type="submit"
+                          title="Удалить" aria-label="Удалить">
+                    <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
+                  </button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card form-card" id="ref-form">
+      <div class="card__head">
+        <h2><%= editing ? 'Редактирование' : 'Новая запись' %></h2>
+        <% if (editing) { %><span class="tag mono">ID <%= editing.id %></span><% } %>
+      </div>
+      <form method="POST"
+            action="<%= editing ? `/refs/${refKey}/${editing.id}/update` : `/refs/${refKey}` %>"
+            class="card__body form-stack">
+        <% cols.forEach(c => { %>
+          <% if (c.readonly) return; %>
+          <label class="field">
+            <span class="field__label"><%= c.label %><% if (c.required) { %> <span class="req" aria-hidden="true">*</span><% } %></span>
+            <% if (c.type === 'select') { %>
+              <select name="<%= c.field %>" <%= c.required ? 'required' : '' %>>
+                <% if (c.nullable) { %><option value="">— нет —</option><% } %>
+                <% c.options.forEach(o => { %>
+                  <option value="<%= o.value %>"
+                    <%= editing && String(editing[c.field]) === String(o.value) ? 'selected' : '' %>>
+                    <%= o.label %>
+                  </option>
+                <% }) %>
+              </select>
+            <% } else if (c.type === 'number') { %>
+              <input type="number" name="<%= c.field %>"
+                     value="<%= editing ? editing[c.field] : (c.default ?? '') %>"
+                     <%= c.required ? 'required' : '' %>
+                     <%= c.min !== undefined ? `min="${c.min}"` : '' %> />
+            <% } else { %>
+              <input type="text" name="<%= c.field %>"
+                     value="<%= editing ? (editing[c.field] || '') : '' %>"
+                     <%= c.required ? 'required' : '' %> />
+            <% } %>
+            <% if (c.hint) { %><span class="hint"><%= c.hint %></span><% } %>
+          </label>
+        <% }) %>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <svg class="icon" aria-hidden="true"><use href="#<%= editing ? 'i-check' : 'i-plus' %>"></use></svg><%= editing ? 'Сохранить' : 'Добавить' %>
+          </button>
+          <% if (editing) { %>
+            <a href="/refs/<%= refKey %>" class="btn btn-ghost">Отмена</a>
+          <% } %>
+        </div>
+      </form>
+    </div>
+  </div>
+<% } %>
+
+<%- include('../partials/footer') %>

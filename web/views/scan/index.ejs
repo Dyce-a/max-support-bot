@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Сканер QR — заявка</title>
+  <% if (miniappEnabled) { %>
+    <%# Мост MAX: даёт нативный сканер openCodeReader() и id пользователя %>
+    <script src="https://st.max.ru/js/max-web-app.js"></script>
+  <% } %>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #0f1115; color: #f2f4f8;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+      min-height: 100%;
+    }
+    .wrap { width: 100%; max-width: 420px; }
+    h1 { font-size: 19px; margin: 0 0 6px; }
+    p  { margin: 0 0 14px; line-height: 1.45; }
+    .muted { color: #9aa3b2; font-size: 13px; }
+
+    .viewport {
+      position: relative; width: 100%; aspect-ratio: 1 / 1;
+      background: #000; border-radius: 16px; overflow: hidden; margin-bottom: 14px;
+    }
+    .viewport video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .frame {
+      position: absolute; inset: 14%;
+      border: 3px solid rgba(255,255,255,.85); border-radius: 14px;
+      box-shadow: 0 0 0 100vmax rgba(0,0,0,.35);
+    }
+
+    .btn {
+      display: block; width: 100%; padding: 13px 16px; margin-bottom: 10px;
+      border: 1px solid #2b3040; border-radius: 12px;
+      background: #1a1e28; color: #f2f4f8;
+      font-size: 15px; text-align: center; text-decoration: none; cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-primary { background: #2563eb; border-color: #2563eb; }
+    .btn:active { opacity: .8; }
+
+    .card {
+      background: #181c24; border: 1px solid #262b36;
+      border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    }
+    .card.ok  { border-color: #1e6b46; background: #10231a; }
+    .card.err { border-color: #7a2d2d; background: #261414; }
+    .card h2  { margin: 0 0 10px; font-size: 16px; }
+
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 15px; }
+    dt { color: #9aa3b2; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+    dd { margin: 0; font-weight: 600; }
+
+    .ic {
+      width: 1em; height: 1em; margin-right: 8px; vertical-align: -.12em;
+      fill: none; stroke: currentColor; stroke-width: 2;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+    .ic-ok { stroke: #4ade80; }
+
+    .manual { display: flex; gap: 8px; margin-top: 4px; }
+    .manual input {
+      flex: 1; padding: 12px; border-radius: 12px; border: 1px solid #2b3040;
+      background: #12151c; color: #f2f4f8; font-size: 16px; letter-spacing: 2px;
+      text-transform: uppercase; font-family: ui-monospace, Consolas, monospace;
+    }
+    .manual button { width: auto; margin: 0; padding: 12px 18px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>
+    <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+      <circle cx="12" cy="13" r="4"/>
+    </svg>Сканер аудитории
+  </h1>
+  <p class="muted" id="lead">Наведите камеру на QR-наклейку у двери.</p>
+
+  <div id="state-error" class="card err hidden">
+    <h2 id="err-title">Не получилось</h2>
+    <p class="muted" id="err-text"></p>
+    <a class="btn btn-primary hidden" id="startBot">Открыть бота</a>
+    <button class="btn" id="retry">Попробовать снова</button>
+  </div>
+
+  <div id="state-ok" class="card ok hidden">
+    <h2>
+      <svg class="ic ic-ok" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/>
+      </svg>Аудитория распознана
+    </h2>
+    <dl>
+      <dt>Корпус</dt><dd id="ok-building">—</dd>
+      <dt>Этаж</dt><dd id="ok-floor">—</dd>
+      <dt>Аудитория</dt><dd id="ok-room">—</dd>
+    </dl>
+    <p class="muted" style="margin:12px 0 0">
+      Вернитесь в чат с ботом — там уже ждёт выбор неисправности.
+    </p>
+    <button class="btn btn-primary hidden" id="closeApp" style="margin-top:12px">Перейти в чат с ботом</button>
+    <button class="btn hidden" id="scanMore" style="margin-top:12px">Сканировать ещё</button>
+  </div>
+
+  <div id="state-scan">
+    <div class="viewport hidden" id="viewport">
+      <video id="video" playsinline muted></video>
+      <div class="frame"></div>
+    </div>
+
+    <button class="btn btn-primary hidden" id="nativeScan">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>Открыть камеру
+    </button>
+  </div>
+
+  <%# Ручной ввод держим снаружи блока сканера: он нужен и когда камера не завелась %>
+  <div id="manual-block">
+    <p class="muted" style="margin-top:16px">Не сканируется? Введите код с наклейки:</p>
+    <form class="manual" id="manualForm">
+      <input id="manualCode" maxlength="12" placeholder="R7K2M9" autocomplete="off"
+             autocapitalize="characters" spellcheck="false" />
+      <button class="btn" type="submit">ОК</button>
+    </form>
+  </div>
+
+</div>
+
+<canvas id="canvas" class="hidden"></canvas>
+
+<script>
+(() => {
+  <%# JSON внутри <script>: «<» экранируем, иначе «</script>» в данных закрыл бы тег %>
+  const TOKEN       = <%- JSON.stringify(token).replace(/</g, '\\u003c') %>;
+  const TOKEN_VALID = <%- JSON.stringify(tokenValid) %>;
+  const TOKEN_GIVEN = <%- JSON.stringify(tokenGiven) %>;
+  const BOT_LINK    = <%- JSON.stringify(botLink || '').replace(/</g, '\\u003c') %>;
+
+  const $ = (id) => document.getElementById(id);
+  const video  = $('video');
+  const canvas = $('canvas');
+  const cctx   = canvas.getContext('2d', { willReadFrequently: true });
+
+  const ERRORS = {
+    token_expired: 'Ссылка на сканер устарела. Вернитесь в чат с ботом и нажмите «Сканировать QR» ещё раз.',
+    no_identity:   'Не удалось понять, кто вы. Откройте сканер кнопкой из бота, а не по сохранённой ссылке.',
+    bad_signature: 'Не удалось подтвердить, кто вы. Закройте сканер и откройте его кнопкой из бота заново.',
+    unknown_user:  'Вы ещё не запускали бота. Откройте его — аудитория с наклейки подставится сама.',
+    send_failed:   'Аудиторию нашли, но бот не смог написать вам в чат. Откройте бота и попробуйте ещё раз.',
+    unknown_code:  'Такой аудитории нет — возможно, наклейку заменили. Попробуйте ввести код вручную.',
+    bad_code:      'Это не QR-код аудитории.',
+    too_fast:      'Слишком часто. Подождите пару секунд.',
+    insecure:      'Камера работает только по HTTPS. Откройте сканер по ссылке из бота.',
+    nocamera:      'Нет доступа к камере. Разрешите доступ в настройках браузера или введите код вручную.',
+    network:       'Сервер не ответил. Проверьте связь и попробуйте снова.',
+  };
+
+  const state = { busy: false, stream: null, timer: null, mode: 'browser', initData: null, detector: null, code: null };
+
+  const show = (which) => {
+    $('state-scan').classList.toggle('hidden', which !== 'scan');
+    $('state-ok').classList.toggle('hidden',   which !== 'ok');
+    $('state-error').classList.toggle('hidden', which !== 'error');
+    $('lead').classList.toggle('hidden', which !== 'scan');
+    // Ручной ввод прячем только на экране успеха
+    $('manual-block').classList.toggle('hidden', which === 'ok');
+  };
+
+  // Ошибки, после которых на этой странице сделать уже нечего — нужно вернуться в бот
+  const TERMINAL = ['token_expired', 'no_identity', 'bad_signature', 'unknown_user', 'send_failed', 'insecure'];
+
+  // Код аудитории из того, что распознали: полный URL наклейки или сам код
+  const codeOf = (raw) => (String(raw || '').split(/[?#]/)[0].split('/').filter(Boolean).pop() || '').toUpperCase();
+
+  function fail(code) {
+    stopCamera();
+    $('err-text').textContent = ERRORS[code] || 'Неизвестная ошибка: ' + code;
+    const terminal = TERMINAL.includes(code);
+    $('retry').classList.toggle('hidden', terminal);
+    // Бот не может написать тому, кто с ним не общался или остановил его. Зато
+    // запуск по ?start=КОД присылает боту событие с кодом — аудитория подставится там
+    const startable = (code === 'unknown_user' || code === 'send_failed') && BOT_LINK && state.code;
+    if (startable) $('startBot').href = BOT_LINK + (BOT_LINK.includes('?') ? '&' : '?') + 'start=' + encodeURIComponent(state.code);
+    $('startBot').classList.toggle('hidden', !startable);
+    show('error');
+    if (terminal) $('manual-block').classList.add('hidden');
+  }
+
+  // =============== Отправка распознанного кода ===============
+
+  async function submit(raw) {
+    if (state.busy) return;
+    state.busy = true;
+    state.code = codeOf(raw);
+    stopCamera();
+
+    // Мини-апп подтверждает личность подписанной строкой initData — сервер
+    // сверяет подпись с токеном бота. Голому id из initDataUnsafe он не верит
+    const body = TOKEN_VALID ? { token: TOKEN, code: raw } : { initData: state.initData, code: raw };
+
+    let res, data;
+    try {
+      res  = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      data = await res.json();
+    } catch (e) {
+      state.busy = false;
+      return fail('network');
+    }
+
+    state.busy = false;
+    if (!res.ok || !data.ok) return fail(data && data.error);
+
+    $('ok-building').textContent = data.room.building || '—';
+    $('ok-floor').textContent    = data.room.floor;
+    $('ok-room').textContent     = data.room.number;
+    $('closeApp').classList.toggle('hidden', state.mode !== 'miniapp');
+    $('scanMore').classList.toggle('hidden', state.mode === 'miniapp');
+    show('ok');
+  }
+
+  // =============== Камера в браузере ===============
+
+  function stopCamera() {
+    if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+    if (state.stream) { state.stream.getTracks().forEach(t => t.stop()); state.stream = null; }
+    $('viewport').classList.add('hidden');
+  }
+
+  const loadScript = (src) => new Promise((ok, no) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = ok; s.onerror = no;
+    document.head.appendChild(s);
+  });
+
+  async function startCamera() {
+    if (!window.isSecureContext) return fail('insecure');
+
+    // BarcodeDetector есть в Chrome/Android; на iOS его нет — там подключаем jsQR
+    if (!state.detector && 'BarcodeDetector' in window) {
+      try {
+        const formats = await window.BarcodeDetector.getSupportedFormats();
+        if (formats.includes('qr_code')) state.detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+      } catch (e) { /* остаёмся на jsQR */ }
+    }
+    if (!state.detector && !window.jsQR) {
+      try { await loadScript('/vendor/jsqr.js'); } catch (e) { return fail('network'); }
+    }
+
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } }, audio: false,
+      });
+    } catch (e) {
+      return fail('nocamera');
+    }
+
+    video.srcObject = state.stream;
+    await video.play().catch(() => {});
+    $('viewport').classList.remove('hidden');
+    show('scan');
+    tick();
+  }
+
+  async function tick() {
+    if (!state.stream || state.busy) return;
+
+    if (video.readyState >= 2 && video.videoWidth) {
+      let raw = null;
+      try {
+        if (state.detector) {
+          const codes = await state.detector.detect(video);
+          if (codes.length) raw = codes[0].rawValue;
+        } else {
+          // Кадр уменьшаем: jsQR на полном разрешении заметно тормозит на телефоне
+          const w = 480;
+          const h = Math.round(video.videoHeight * (w / video.videoWidth));
+          canvas.width = w; canvas.height = h;
+          cctx.drawImage(video, 0, 0, w, h);
+          const img = cctx.getImageData(0, 0, w, h);
+          const found = window.jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
+          if (found) raw = found.data;
+        }
+      } catch (e) { /* кадр не разобрали — просто берём следующий */ }
+
+      if (raw) return submit(raw);
+    }
+
+    state.timer = setTimeout(tick, 120);
+  }
+
+  // =============== Старт ===============
+
+  async function init() {
+    const wa = window.WebApp;
+
+    if (wa && typeof wa.openCodeReader === 'function') {
+      state.mode  = 'miniapp';
+      state.initData = (typeof wa.initData === 'string' && wa.initData) || null;
+      if (typeof wa.ready === 'function') { try { wa.ready(); } catch (e) {} }
+
+      if (!TOKEN_VALID && !state.initData) return fail('no_identity');
+
+      $('nativeScan').addEventListener('click', async () => {
+        try {
+          const result = await wa.openCodeReader(true);
+          if (result) submit(result);
+        } catch (e) { fail('nocamera'); }
+      });
+
+      // Открыли с наклейки по ссылке ?startapp=КОД: код уже есть, камера не нужна —
+      // сразу отправляем, бот пишет в чат «QR распознан» с этой аудиторией
+      const start = codeOf(wa.initDataUnsafe && wa.initDataUnsafe.start_param);
+      if (/^[A-Z0-9]{4,12}$/.test(start)) {
+        $('lead').textContent = 'Подставляю аудиторию с наклейки…';
+        $('manual-block').classList.add('hidden');
+        return submit(start);
+      }
+      $('nativeScan').classList.remove('hidden');
+      return;
+    }
+
+    // Обычный браузер: личность — только из токена, который выдал бот
+    if (!TOKEN_VALID) return fail(TOKEN_GIVEN ? 'token_expired' : 'no_identity');
+    startCamera();
+  }
+
+  $('retry').addEventListener('click', () => {
+    show('scan');
+    if (state.mode === 'miniapp') $('nativeScan').classList.remove('hidden');
+    else startCamera();
+  });
+
+  $('scanMore').addEventListener('click', () => { show('scan'); startCamera(); });
+
+  // Мини-апп с наклейки открывается поверх того, где был человек, а не в чате
+  // с ботом. openMaxLink открывает ссылку max.ru внутри MAX — то есть сам чат
+  $('closeApp').addEventListener('click', () => {
+    const wa = window.WebApp;
+    if (wa && BOT_LINK && typeof wa.openMaxLink === 'function') wa.openMaxLink(BOT_LINK);
+    else if (wa && typeof wa.close === 'function') wa.close();
+  });
+  $('startBot').addEventListener('click', (e) => {
+    const wa = window.WebApp;
+    if (wa && typeof wa.openMaxLink === 'function') { e.preventDefault(); wa.openMaxLink($('startBot').href); }
+  });
+
+  $('manualForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const code = $('manualCode').value.trim();
+    if (code) submit(code);
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>

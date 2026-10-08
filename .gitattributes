@@ -1,0 +1,10 @@
+# По умолчанию — LF в репозитории и в рабочей копии.
+# Критично для deploy/*.sh: с CRLF bash на сервере падает на первой же строке.
+* text=auto eol=lf
+
+# PowerShell-скрипты запускаются только на Windows — им родные CRLF
+*.ps1 text eol=crlf
+
+# Бинарники не трогаем
+*.png binary
+*.db  binary
